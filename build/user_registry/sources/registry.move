@@ -2,73 +2,47 @@ module user_registry::registry {
     use sui::object::{Self, UID};
     use sui::transfer;
     use sui::tx_context::{Self, TxContext};
-    use sui::table::{Self, Table};
-    use sui::event;
-
-    // ===== Events =====
-    struct UserRegistered has copy, drop {
-        user_address: address,
-        registration_time: u64
-    }
+    use std::vector;
 
     // ===== Storage =====
     struct Registry has key {
         id: UID,
-        users: Table<address, User>,
-        total_users: u64
+        allowed_addresses: vector<vector<u8>>,  // List of Osmosis addresses
     }
-
-    struct User has store {
-        address: address,
-        is_registered: bool,
-        registration_time: u64,
-        external_chain_address: vector<u8>
-    }
-
-    // ===== Error Constants =====
-    const EUserAlreadyExists: u64 = 0;
-    //const EUserNotFound: u64 = 1;
 
     // ===== Constructor =====
     fun init(ctx: &mut TxContext) {
         let registry = Registry {
             id: object::new(ctx),
-            users: table::new(ctx),
-            total_users: 0
+            allowed_addresses: vector::empty(),
         };
         transfer::share_object(registry)
     }
 
     // ===== Public Functions =====
-    public entry fun register_user(
+    
+    /// Add a new Osmosis address to the registry
+    public entry fun add_osmosis_address(
         registry: &mut Registry,
-        ctx: &mut TxContext
+        osmosis_address: vector<u8>
     ) {
-        let sender = tx_context::sender(ctx);
-        assert!(!table::contains(&registry.users, sender), EUserAlreadyExists);
+        vector::push_back(&mut registry.allowed_addresses, osmosis_address);
+    }
 
-        let user = User {
-            address: sender,
-            is_registered: true,
-            registration_time: tx_context::epoch(ctx),
-            external_chain_address: vector[]
+    /// Check if an Osmosis address is in the registry
+    public fun is_address_allowed(
+        registry: &Registry, 
+        osmosis_address: vector<u8>
+    ): bool {
+        let i = 0;
+        let len = vector::length(&registry.allowed_addresses);
+        while (i < len) {
+            let addr = vector::borrow(&registry.allowed_addresses, i);
+            if (addr == &osmosis_address) {
+                return true
+            };
+            i = i + 1;
         };
-
-        table::add(&mut registry.users, sender, user);
-        registry.total_users = registry.total_users + 1;
-
-        event::emit(UserRegistered {
-            user_address: sender,
-            registration_time: tx_context::epoch(ctx)
-        });
-    }
-
-    // ===== View Functions =====
-    public fun is_registered(registry: &Registry, user_address: address): bool {
-        table::contains(&registry.users, user_address)
-    }
-
-    public fun get_total_users(registry: &Registry): u64 {
-        registry.total_users
+        false
     }
 }
